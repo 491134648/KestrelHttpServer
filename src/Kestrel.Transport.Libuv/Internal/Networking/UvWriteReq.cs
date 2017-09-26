@@ -25,7 +25,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Libuv.Internal.Networkin
 
         private LibuvAwaitable<UvWriteReq> _awaitable = new LibuvAwaitable<UvWriteReq>();
         private List<GCHandle> _pins = new List<GCHandle>(BUFFER_COUNT + 1);
-        private List<BufferHandle> _handles = new List<BufferHandle>(BUFFER_COUNT + 1);
+        private List<MemoryHandle> _handles = new List<MemoryHandle>(BUFFER_COUNT + 1);
 
         public UvWriteReq(ILibuvTrace logger) : base(logger)
         {
@@ -206,7 +206,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Libuv.Internal.Networkin
         }
 
         // Safe handle has instance method called Unpin
-        // so using UnpinGcHandles to avoid conflict 
+        // so using UnpinGcHandles to avoid conflict
         private void UnpinGcHandles()
         {
             var pinList = _pins;

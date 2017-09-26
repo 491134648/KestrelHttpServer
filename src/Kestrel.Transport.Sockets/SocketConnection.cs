@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -9,6 +10,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
+using System.Threading;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions.Internal;
 using Microsoft.AspNetCore.Protocols;
 
@@ -227,7 +229,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets
             }
         }
 
-        private static ArraySegment<byte> GetArraySegment(Buffer<byte> buffer)
+        private static ArraySegment<byte> GetArraySegment(Memory<byte> buffer)
         {
             if (!buffer.TryGetArray(out var segment))
             {
@@ -237,7 +239,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets
             return segment;
         }
 
-        public override PipeFactory PipeFactory => _transport.TransportFactory.PipeFactory;
+        public override BufferPool BufferPool => _transport.TransportFactory.BufferPool;
         public override IScheduler InputWriterScheduler => InlineScheduler.Default;
         public override IScheduler OutputReaderScheduler => TaskRunScheduler.Default;
     }

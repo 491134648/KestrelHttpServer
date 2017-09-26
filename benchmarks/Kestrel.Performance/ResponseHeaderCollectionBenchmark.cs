@@ -1,6 +1,7 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System.Buffers;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -179,7 +180,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Performance
             {
                 ServiceContext = serviceContext,
                 ConnectionFeatures = new FeatureCollection(),
-                PipeFactory = new PipeFactory()
+                BufferPool = new MemoryPool()
             };
 
             var http1Connection = new Http1Connection<object>(application: null, context: http1ConnectionContext);

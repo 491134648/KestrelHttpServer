@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Buffers;
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions.Internal;
 using Microsoft.Extensions.Options;
@@ -10,8 +11,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets
 {
     public sealed class SocketTransportFactory : ITransportFactory
     {
-        private readonly PipeFactory _pipeFactory = new PipeFactory();
-
         public SocketTransportFactory(IOptions<SocketTransportOptions> options)
         {
         }
@@ -36,6 +35,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets
             return new SocketTransport(this, endPointInformation, handler);
         }
 
-        internal PipeFactory PipeFactory => _pipeFactory;
+
+        // TODO: We never dispose pool
+        internal BufferPool BufferPool { get; } = new MemoryPool();
     }
 }

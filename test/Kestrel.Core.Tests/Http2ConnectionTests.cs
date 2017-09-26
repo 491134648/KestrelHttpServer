@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO.Pipelines;
@@ -80,7 +81,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         private static readonly byte[] _noData = new byte[0];
         private static readonly byte[] _maxData = Encoding.ASCII.GetBytes(new string('a', Http2Frame.MinAllowedMaxFrameSize));
 
-        private readonly PipeFactory _pipeFactory = new PipeFactory();
+        private readonly BufferPool _bufferPool = new MemoryPool();
         private readonly (IPipeConnection Transport, IPipeConnection Application) _pair;
         private readonly Http2ConnectionContext _connectionContext;
         private readonly Http2Connection _connection;
@@ -107,7 +108,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 
         public Http2ConnectionTests()
         {
-            _pair = _pipeFactory.CreateConnectionPair();
+            _pair = PipeFactory.CreateConnectionPair(_bufferPool);
 
             _noopApplication = context => Task.CompletedTask;
 
@@ -223,7 +224,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             _connectionContext = new Http2ConnectionContext
             {
                 ServiceContext = new TestServiceContext(),
-                PipeFactory = _pipeFactory,
+                BufferPool = _bufferPool,
                 Application = _pair.Application,
                 Transport = _pair.Transport
             };
@@ -232,7 +233,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 
         public void Dispose()
         {
-            _pipeFactory.Dispose();
+            _bufferPool.Dispose();
         }
 
         void IHttpHeadersHandler.OnHeader(Span<byte> name, Span<byte> value)

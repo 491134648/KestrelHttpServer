@@ -21,9 +21,6 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="System.Threading.Tasks.Extensions" />
 
-    <!-- Override System.Memory and System.Runtime.CompilerServices.Unsafe to the ones we have on feed -->
-    <PackageReference Include="System.Memory" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
   </ItemGroup>
 
   <ItemGroup>

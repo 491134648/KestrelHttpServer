@@ -14,12 +14,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Http.Features" />
-    <PackageReference Include="System.Numerics.Vectors" />
-    <PackageReference Include="System.Buffers" />
-    <PackageReference Include="System.IO.Pipelines" />
-    <PackageReference Include="System.Text.Encodings.Web.Utf8" />
-    <PackageReference Include="System.Memory" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.5.0-preview1-25712-02" />
+    <PackageReference Include="System.IO.Pipelines" Version="0.1.0-e170926-4" />
+    <PackageReference Include="System.Text.Encodings.Web.Utf8" Version="0.1.0-e170926-4"/>
+    <PackageReference Include="System.Memory" Version="4.5.0-preview1-25712-02" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.0-preview1-25712-02" />
   </ItemGroup>
 
 </Project>
