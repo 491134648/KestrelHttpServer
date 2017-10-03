@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Kestrel.Core\Kestrel.Core.csproj" />
+    <ProjectReference Include="..\Kestrel.Https\Kestrel.Https.csproj" />
     <ProjectReference Include="..\Kestrel.Transport.Libuv\Kestrel.Transport.Libuv.csproj" />
   </ItemGroup>
 
