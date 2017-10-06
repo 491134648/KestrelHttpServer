@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.IO.Pipelines.Testing" Version="0.1.0-e170926-4" />
+    <PackageReference Include="System.IO.Pipelines.Testing" Version="0.1.0-e171006-1" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.AspNetCore.Testing" />
     <PackageReference Include="Microsoft.AspNetCore.Http" />
