@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Text;
@@ -41,6 +42,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             new KeyValuePair<string, string>("accept-language", "en-US,en;q=0.5"),
             new KeyValuePair<string, string>("accept-encoding", "gzip, deflate, br"),
             new KeyValuePair<string, string>("upgrade-insecure-requests", "1"),
+        };
+
+        private static readonly IEnumerable<KeyValuePair<string, string>> _requestTrailers = new[]
+        {
+            new KeyValuePair<string, string>("trailer-one", "1"),
+            new KeyValuePair<string, string>("trailer-two", "2"),
         };
 
         private static readonly IEnumerable<KeyValuePair<string, string>> _oneContinuationRequestHeaders = new[]
@@ -91,6 +98,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 
         private readonly RequestDelegate _noopApplication;
         private readonly RequestDelegate _readHeadersApplication;
+        private readonly RequestDelegate _readTrailersApplication;
         private readonly RequestDelegate _bufferingApplication;
         private readonly RequestDelegate _echoApplication;
         private readonly RequestDelegate _echoWaitForAbortApplication;
@@ -114,6 +122,20 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 }
 
                 return Task.CompletedTask;
+            };
+
+            _readTrailersApplication = async context =>
+            {
+                using (var ms = new MemoryStream())
+                {
+                    // Consuming the entire request body guarantees trailers will be available
+                    await context.Request.Body.CopyToAsync(ms);
+                }
+
+                foreach (var header in context.Request.Headers)
+                {
+                    _receivedHeaders[header.Key] = header.Value.ToString();
+                }
             };
 
             _bufferingApplication = async context =>
@@ -640,6 +662,52 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             await StopConnectionAsync(expectedLastStreamId: 1, ignoreNonGoAwayFrames: false);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task HEADERS_Received_WithTrailers_Decoded(bool sendData)
+        {
+            await InitializeConnectionAsync(_readTrailersApplication);
+
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS, _browserRequestHeaders);
+
+            // Initialize another stream with a higher stream ID, and verify that after trailers are
+            // decoded by the other stream, the highest opened stream ID is not reset to the lower ID
+            // (the highest opened stream ID is sent by the server in the GOAWAY frame when shutting
+            // down the connection).
+            await SendHeadersAsync(3, Http2HeadersFrameFlags.END_HEADERS | Http2HeadersFrameFlags.END_STREAM, _browserRequestHeaders);
+
+            // The second stream should end first, since the first one is waiting for the request body.
+            await ExpectAsync(Http2FrameType.HEADERS,
+                withLength: 55,
+                withFlags: (byte)Http2HeadersFrameFlags.END_HEADERS,
+                withStreamId: 3);
+            await ExpectAsync(Http2FrameType.DATA,
+                withLength: 0,
+                withFlags: (byte)Http2DataFrameFlags.END_STREAM,
+                withStreamId: 3);
+
+            if (sendData)
+            {
+                await SendDataAsync(1, _helloBytes, endStream: false);
+            }
+
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS | Http2HeadersFrameFlags.END_STREAM, _requestTrailers);
+
+            await ExpectAsync(Http2FrameType.HEADERS,
+                withLength: 55,
+                withFlags: (byte)Http2HeadersFrameFlags.END_HEADERS,
+                withStreamId: 1);
+            await ExpectAsync(Http2FrameType.DATA,
+                withLength: 0,
+                withFlags: (byte)Http2DataFrameFlags.END_STREAM,
+                withStreamId: 1);
+
+            VerifyDecodedRequestHeaders(_browserRequestHeaders.Concat(_requestTrailers));
+
+            await StopConnectionAsync(expectedLastStreamId: 3, ignoreNonGoAwayFrames: false);
+        }
+
         [Fact]
         public async Task HEADERS_Received_StreamIdZero_ConnectionError()
         {
@@ -772,6 +840,31 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             await SendIncompleteHeadersFrameAsync(streamId: 1);
 
             await WaitForConnectionErrorAsync(expectedLastStreamId: 0, expectedErrorCode: Http2ErrorCode.COMPRESSION_ERROR, ignoreNonGoAwayFrames: false);
+        }
+
+        [Theory]
+        [MemberData(nameof(IllegalTrailerData))]
+        public async Task HEADERS_Received_WithTrailers_ContainsIllegalTrailer_ConnectionError(byte[] trailers)
+        {
+            await InitializeConnectionAsync(_readTrailersApplication);
+
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS, _browserRequestHeaders);
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS | Http2HeadersFrameFlags.END_STREAM, trailers);
+
+            await WaitForConnectionErrorAsync(expectedLastStreamId: 1, expectedErrorCode: Http2ErrorCode.PROTOCOL_ERROR, ignoreNonGoAwayFrames: false);
+        }
+
+        [Theory]
+        [InlineData(Http2HeadersFrameFlags.NONE)]
+        [InlineData(Http2HeadersFrameFlags.END_HEADERS)]
+        public async Task HEADERS_Received_WithTrailers_EndStreamNotSet_ConnectionError(Http2HeadersFrameFlags flags)
+        {
+            await InitializeConnectionAsync(_readTrailersApplication);
+
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS, _browserRequestHeaders);
+            await SendHeadersAsync(1, flags, _requestTrailers);
+
+            await WaitForConnectionErrorAsync(expectedLastStreamId: 1, expectedErrorCode: Http2ErrorCode.PROTOCOL_ERROR, ignoreNonGoAwayFrames: false);
         }
 
         [Theory]
@@ -1340,6 +1433,67 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             await StopConnectionAsync(expectedLastStreamId: 1, ignoreNonGoAwayFrames: false);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task CONTINUATION_Received_WithTrailers_Decoded(bool sendData)
+        {
+            await InitializeConnectionAsync(_readTrailersApplication);
+
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS, _browserRequestHeaders);
+
+            // Initialize another stream with a higher stream ID, and verify that after trailers are
+            // decoded by the other stream, the highest opened stream ID is not reset to the lower ID
+            // (the highest opened stream ID is sent by the server in the GOAWAY frame when shutting
+            // down the connection).
+            await SendHeadersAsync(3, Http2HeadersFrameFlags.END_HEADERS | Http2HeadersFrameFlags.END_STREAM, _browserRequestHeaders);
+
+            // The second stream should end first, since the first one is waiting for the request body.
+            await ExpectAsync(Http2FrameType.HEADERS,
+                withLength: 55,
+                withFlags: (byte)Http2HeadersFrameFlags.END_HEADERS,
+                withStreamId: 3);
+            await ExpectAsync(Http2FrameType.DATA,
+                withLength: 0,
+                withFlags: (byte)Http2DataFrameFlags.END_STREAM,
+                withStreamId: 3);
+
+            if (sendData)
+            {
+                await SendDataAsync(1, _helloBytes, endStream: false);
+            }
+
+            // Trailers encoded as Literal Header Field without Indexing - New Name
+            //   trailer-1: 1
+            //   trailer-2: 2
+            var trailers = new byte[] { 0x00, 0x09 }
+                .Concat(Encoding.ASCII.GetBytes("trailer-1"))
+                .Concat(new byte[] { 0x01, (byte)'1' })
+                .Concat(new byte[] { 0x00, 0x09 })
+                .Concat(Encoding.ASCII.GetBytes("trailer-2"))
+                .Concat(new byte[] { 0x01, (byte)'2' })
+                .ToArray();
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_STREAM, new byte[0]);
+            await SendContinuationAsync(1, Http2ContinuationFrameFlags.END_HEADERS, trailers);
+
+            await ExpectAsync(Http2FrameType.HEADERS,
+                withLength: 55,
+                withFlags: (byte)Http2HeadersFrameFlags.END_HEADERS,
+                withStreamId: 1);
+            await ExpectAsync(Http2FrameType.DATA,
+                withLength: 0,
+                withFlags: (byte)Http2DataFrameFlags.END_STREAM,
+                withStreamId: 1);
+
+            VerifyDecodedRequestHeaders(_browserRequestHeaders.Concat(new[]
+            {
+                new KeyValuePair<string, string>("trailer-1", "1"),
+                new KeyValuePair<string, string>("trailer-2", "2")
+            }));
+
+            await StopConnectionAsync(expectedLastStreamId: 3, ignoreNonGoAwayFrames: false);
+        }
+
         [Fact]
         public async Task CONTINUATION_Received_StreamIdMismatch_ConnectionError()
         {
@@ -1360,6 +1514,19 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             await SendIncompleteContinuationFrameAsync(streamId: 1);
 
             await WaitForConnectionErrorAsync(expectedLastStreamId: 0, expectedErrorCode: Http2ErrorCode.COMPRESSION_ERROR, ignoreNonGoAwayFrames: false);
+        }
+
+        [Theory]
+        [MemberData(nameof(IllegalTrailerData))]
+        public async Task CONTINUATION_Received_WithTrailers_ContainsIllegalTrailer_ConnectionError(byte[] trailers)
+        {
+            await InitializeConnectionAsync(_readTrailersApplication);
+
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_HEADERS, _browserRequestHeaders);
+            await SendHeadersAsync(1, Http2HeadersFrameFlags.END_STREAM, new byte[0]);
+            await SendContinuationAsync(1, Http2ContinuationFrameFlags.END_HEADERS, trailers);
+
+            await WaitForConnectionErrorAsync(expectedLastStreamId: 1, expectedErrorCode: Http2ErrorCode.PROTOCOL_ERROR, ignoreNonGoAwayFrames: false);
         }
 
         [Theory]
@@ -1776,6 +1943,17 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             return done;
         }
 
+        private async Task SendContinuationAsync(int streamId, Http2ContinuationFrameFlags flags, byte[] payload)
+        {
+            var frame = new Http2Frame();
+
+            frame.PrepareContinuation(flags, streamId);
+            frame.Length = payload.Length;
+            payload.CopyTo(frame.Payload);
+
+            await SendAsync(frame.Raw);
+        }
+
         private Task SendEmptyContinuationFrameAsync(int streamId, Http2ContinuationFrameFlags flags)
         {
             var frame = new Http2Frame();
@@ -2174,6 +2352,35 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                     var headers = requestHeaders.Except(new[] { headerField }).Concat(new[] { headerField });
                     data.Add(headers);
                 }
+
+                return data;
+            }
+        }
+
+        public static TheoryData<byte[]> IllegalTrailerData
+        {
+            get
+            {
+                // We can't use HPackEncoder here because it will convert header names to lowercase
+                var data = new TheoryData<byte[]>();
+
+                // Indexed Header Field - :method: GET
+                data.Add(new byte[] { 0x82 });
+
+                // Indexed Header Field - :path: /
+                data.Add(new byte[] { 0x84 });
+
+                // Indexed Header Field - :scheme: http
+                data.Add(new byte[] { 0x86 });
+
+                // Literal Header Field without Indexing - Indexed Name - :authority: 127.0.0.1
+                data.Add(new byte[] { 0x01, 0x09 }.Concat(Encoding.ASCII.GetBytes("127.0.0.1")).ToArray());
+
+                // Literal Header Field without Indexing - New Name - contains-Capital: 0
+                data.Add(new byte[] { 0x00, 0x10 }
+                    .Concat(Encoding.ASCII.GetBytes("contains-Capital"))
+                    .Concat(new byte[] { 0x01, (byte)'0' })
+                    .ToArray());
 
                 return data;
             }
