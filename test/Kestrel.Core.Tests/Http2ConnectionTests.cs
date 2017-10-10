@@ -33,6 +33,15 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             new KeyValuePair<string, string>(":scheme", "https"),
         };
 
+        private static readonly IEnumerable<KeyValuePair<string, string>> _expectContinueRequestHeaders = new[]
+        {
+            new KeyValuePair<string, string>(":method", "POST"),
+            new KeyValuePair<string, string>(":path", "/"),
+            new KeyValuePair<string, string>(":authority", "127.0.0.1"),
+            new KeyValuePair<string, string>(":scheme", "https"),
+            new KeyValuePair<string, string>("expect", "100-continue"),
+        };
+
         private static readonly IEnumerable<KeyValuePair<string, string>> _browserRequestHeaders = new[]
         {
             new KeyValuePair<string, string>(":method", "GET"),
@@ -641,6 +650,38 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 withStreamId: 1);
 
             VerifyDecodedRequestHeaders(_browserRequestHeaders);
+
+            await StopConnectionAsync(expectedLastStreamId: 1, ignoreNonGoAwayFrames: false);
+        }
+
+        [Fact]
+        public async Task HEADERS_Received_ContainExpect100Continue_100ContinueSent()
+        {
+            await InitializeConnectionAsync(_echoApplication);
+
+            await StartStreamAsync(1, _expectContinueRequestHeaders, false);
+
+            var frame = await ExpectAsync(Http2FrameType.HEADERS,
+                withLength: 5,
+                withFlags: (byte)Http2HeadersFrameFlags.END_HEADERS,
+                withStreamId: 1);
+
+            await SendDataAsync(1, _helloBytes, endStream: true);
+
+            await ExpectAsync(Http2FrameType.HEADERS,
+                withLength: 37,
+                withFlags: (byte)Http2HeadersFrameFlags.END_HEADERS,
+                withStreamId: 1);
+            await ExpectAsync(Http2FrameType.DATA,
+                withLength: 5,
+                withFlags: (byte)Http2DataFrameFlags.NONE,
+                withStreamId: 1);
+            await ExpectAsync(Http2FrameType.DATA,
+                withLength: 0,
+                withFlags: (byte)Http2DataFrameFlags.END_STREAM,
+                withStreamId: 1);
+
+            Assert.Equal(new byte[] { 0x08, 0x03, (byte)'1', (byte)'0', (byte)'0' }, frame.HeadersPayload.ToArray());
 
             await StopConnectionAsync(expectedLastStreamId: 1, ignoreNonGoAwayFrames: false);
         }

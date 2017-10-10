@@ -18,6 +18,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 
         private readonly HttpProtocol _context;
 
+        private bool _send100Continue = true;
+
         protected MessageBody(HttpProtocol context)
         {
             _context = context;
@@ -110,6 +112,15 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         protected abstract Task OnConsumeAsync();
 
         public abstract Task StopAsync();
+
+        protected void TryProduceContinue()
+        {
+            if (_send100Continue)
+            {
+                _context.HttpResponseControl.ProduceContinue();
+                _send100Continue = false;
+            }
+        }
 
         private void TryInit()
         {

@@ -16,6 +16,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2
             _context = context;
         }
 
+        protected override void OnReadStarting()
+        {
+            TryProduceContinue();
+        }
+
         protected override Task OnConsumeAsync() => Task.CompletedTask;
 
         public override Task StopAsync()
