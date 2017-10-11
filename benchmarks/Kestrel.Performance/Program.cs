@@ -10,7 +10,14 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Performance
     {
         public static void Main(string[] args)
         {
-            BenchmarkSwitcher.FromAssembly(typeof(Program).GetTypeInfo().Assembly).Run(args);
+            //BenchmarkSwitcher.FromAssembly(typeof(Program).GetTypeInfo().Assembly).Run(args);
+
+            var benchmark = new RequestParsingBenchmark();
+            benchmark.Setup();
+            for(var i = 0; i < 10240; i += 1)
+            {
+                benchmark.PlaintextTechEmpower();
+            }
         }
     }
 }
